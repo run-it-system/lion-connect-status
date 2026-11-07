@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>État du service · LION CONNECT</title>
+<style>
+:root{--bg:#0b0f12;--card:#12181c;--line:#223038;--text:#dfe6ea;--dim:#8f9ca3;--ok:#46ce83;--err:#ff7a78;--acc:#3fc0e6}
+@media (prefers-color-scheme:light){:root{--bg:#f5f7f8;--card:#fff;--line:#dfe5e8;--text:#14202a;--dim:#5b6870;--ok:#16884a;--err:#c0392b;--acc:#0071a3}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:640px;margin:0 auto;padding:40px 16px}
+h1{font-size:20px;margin:0 0 4px}.sub{color:var(--dim);margin:0 0 24px;font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:14px}
+.state{display:flex;align-items:center;gap:12px;font-size:18px;font-weight:600}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--dim);flex:none}.ok .dot{background:var(--ok)}.err .dot{background:var(--err)}
+.msg{white-space:pre-line;margin:10px 0 0}.dim{color:var(--dim);font-size:14px}
+.lang{float:right}.lang button{background:none;border:1px solid var(--line);color:var(--dim);border-radius:6px;padding:3px 9px;cursor:pointer}
+a{color:var(--acc)}
+</style>
+</head>
+<body>
+<main>
+  <div class="lang"><button type="button" id="lang"></button></div>
+  <h1>LION CONNECT</h1>
+  <p class="sub" id="t-sub"></p>
+  <div class="card" id="card" aria-live="polite"><div class="state"><span class="dot" aria-hidden="true"></span><span id="state">…</span></div>
+    <p class="msg" id="detail"></p><p class="msg" id="message"></p></div>
+  <p class="dim" id="updated"></p>
+  <p class="dim" id="t-help"></p>
+</main>
+<script>
+(function () {
+  var T = {
+    fr: { sub: 'État du service (licences, essais, partages, mises à jour)', ok: 'Tous les services fonctionnent', err: 'Incident en cours',
+          unk: 'État indisponible pour le moment', since: 'Depuis le ', last: 'Dernier incident : du ', to: ' au ', upd: 'Dernière vérification : ',
+          help: 'Pendant un incident, LION CONNECT continue de fonctionner sur les ordinateurs déjà activés ; les envois (e-mails, partages) reprennent automatiquement.',
+          other: 'English' },
+    en: { sub: 'Service status (licenses, trials, shares, updates)', ok: 'All services are operational', err: 'Ongoing incident',
+          unk: 'Status unavailable right now', since: 'Since ', last: 'Last incident: from ', to: ' to ', upd: 'Last check: ',
+          help: 'During an incident, LION CONNECT keeps working on computers already activated; sending (emails, shares) resumes automatically.',
+          other: 'Français' }
+  };
+  var lang = (navigator.language || 'fr').toLowerCase().indexOf('fr') === 0 ? 'fr' : 'en';
+  try { var q = new URLSearchParams(location.search).get('lang'); if (q === 'fr' || q === 'en') lang = q; } catch (e) {}
+  var data = null;
+  function fmt(ts) { return new Date(ts * 1000).toLocaleString(lang === 'fr' ? 'fr-FR' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' }); }
+  function txt(id, s) { document.getElementById(id).textContent = s || ''; }
+  function render() {
+    var t = T[lang]; document.documentElement.lang = lang; txt('t-sub', t.sub); txt('t-help', t.help); txt('lang', t.other);
+    var card = document.getElementById('card'); card.className = 'card';
+    if (!data) { txt('state', t.unk); txt('detail', ''); txt('message', ''); txt('updated', ''); return; }
+    var fresh = Date.now() / 1000 - (data.updatedAt || 0) < 2 * 86400;
+    card.classList.add(data.incident ? 'err' : (fresh ? 'ok' : ''));
+    txt('state', data.incident ? t.err : (fresh ? t.ok : t.unk));
+    txt('detail', data.incident && data.since ? t.since + fmt(data.since)
+      : (data.lastIncident ? t.last + fmt(data.lastIncident.since) + t.to + fmt(data.lastIncident.end) : ''));
+    txt('message', lang === 'fr' ? data.message_fr : data.message_en);
+    txt('updated', data.updatedAt ? t.upd + fmt(data.updatedAt) : '');
+  }
+  document.getElementById('lang').onclick = function () { lang = lang === 'fr' ? 'en' : 'fr'; render(); };
+  function load() {
+    fetch('status.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); })
+      .then(function (j) { data = JSON.parse(atob(j.payload)); render(); }).catch(function () { render(); });
+  }
+  render(); load(); setInterval(load, 60000);
+})();
+</script>
+</body>
+</html>

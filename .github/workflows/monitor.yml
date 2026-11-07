@@ -1,0 +1,38 @@
+name: Surveillance
+# Teste lion-connect.com toutes les 5 minutes depuis GitHub (hors du serveur et hors de Cloudflare) et publie l'état signé.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: surveillance
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: true
+      - name: Contrôle et état signé
+        env:
+          STATUS_SIGNING_KEY: ${{ secrets.STATUS_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          KEY="$RUNNER_TEMP/status.key"
+          printf '%s\n' "$STATUS_SIGNING_KEY" > "$KEY"
+          STATUS_KEY_FILE="$KEY" python3 scripts/update.py
+          rm -f "$KEY"
+      - name: Publication
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- status.json state.json; then exit 0; fi
+          git config user.name "lion-connect-status"
+          git config user.email "status@lion-connect.com"
+          git add status.json state.json
+          git commit -m "État : $(date -u +%FT%TZ)"
+          git push
