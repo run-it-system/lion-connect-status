@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
-  pages: write   # relancer la publication de la page : un commit fait avec GITHUB_TOKEN ne la déclenche pas
 concurrency:
   group: surveillance
   cancel-in-progress: false
@@ -14,6 +13,8 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    outputs:
+      changed: ${{ steps.pub.outputs.changed }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -29,21 +30,36 @@ jobs:
           STATUS_KEY_FILE="$KEY" python3 scripts/update.py
           rm -f "$KEY"
       - name: Publication
+        id: pub
         run: |
           set -euo pipefail
-          if git diff --quiet -- status.json state.json; then exit 0; fi
+          if git diff --quiet -- status.json state.json; then echo changed=false >> "$GITHUB_OUTPUT"; exit 0; fi
           git config user.name "lion-connect-status"
           git config user.email "status@lion-connect.com"
           git add status.json state.json
           git commit -m "État : $(date -u +%FT%TZ)"
           git push
-      - name: Page d'état (status.lion-connect.com) republiée
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # Un push fait avec GITHUB_TOKEN ne relance pas GitHub Pages : publication demandée explicitement.
-          if [ "$(git rev-parse HEAD)" = "${{ github.sha }}" ]; then exit 0; fi   # rien de nouveau publié
-          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/pages/builds" > /dev/null
+          echo changed=true >> "$GITHUB_OUTPUT"
+  # Page d'état (status.lion-connect.com) : publiée par GitHub Actions après chaque nouvel état
+  # (un push fait avec GITHUB_TOKEN ne déclenche ni la publication classique de Pages ni un autre workflow).
+  page:
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: .
+      - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
